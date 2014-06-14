@@ -9,9 +9,19 @@ class I2CMasterCtrlIO extends Bundle{
   val read = Bool(INPUT)
 }
 
-class I2CMasterIO extends Bundle{
-  val ctrl_in = new I2CMasterCtrlIO()  
-  val ctrl_out = new I2CMasterCtrlIO().flip
+class PullupIO extends Bundle{
+  val in = Bool(INPUT)
+  val out = Bool(OUTPUT)
+}
+
+class I2CBusIO extends Bundle{
+  val scl = new PullupIO()
+  val sda = new PullupIO()
+}
+
+class I2CMasterUserIO extends Bundle{
+  val ctrl = new I2CMasterCtrlIO()  
+  val stat = new I2CMasterCtrlIO().flip
   
   val active = Bool(OUTPUT)
   val ack = Bool(OUTPUT)
@@ -21,11 +31,11 @@ class I2CMasterIO extends Bundle{
 
   val data_in = UInt(INPUT, width=8)
   val data_out = UInt(OUTPUT, width=8)
+}
 
-  val scl_in = Bool(INPUT)
-  val scl_out = Bool(OUTPUT)
-  val sda_in = Bool(INPUT)
-  val sda_out = Bool(OUTPUT)
+class I2CMasterIO extends Bundle{
+  val user = new I2CMasterUserIO()  
+  val bus = new I2CBusIO()
 }
 
 class I2CMaster extends Module {
@@ -34,12 +44,12 @@ class I2CMaster extends Module {
   // Reg SCL and SDA to avoid glitches
   val scl_reg = Reg(init = Bool(true))
   val sda_reg = Reg(init = Bool(true))
-  io.scl_out := scl_reg
-  io.sda_out := sda_reg
+  io.bus.scl.out := scl_reg
+  io.bus.sda.out := sda_reg
   
   // Sample input lines
-  val scl_in_reg = Reg(next = io.scl_in)
-  val sda_in_reg = Reg(next = io.sda_in)
+  val scl_in_reg = Reg(next = io.bus.scl.in)
+  val sda_in_reg = Reg(next = io.bus.sda.in)
 
   val reset_counters = Bool()
   reset_counters := Bool(false)
@@ -54,7 +64,7 @@ class I2CMaster extends Module {
   clock_counter.io.reset := reset_counters
 
   // Report MSB of clock divider
-  io.clock_div_out := clock_max
+  io.user.clock_div_out := clock_max
 
   // Counter for number of bit transactions in each state
   val bit_max = Reg(init=UInt(0,width=5))
@@ -73,17 +83,17 @@ class I2CMaster extends Module {
   val s_idle :: s_start :: s_wait :: s_read :: s_write :: s_stop :: Nil = Enum(UInt(),6)
   val state = Reg(init = s_idle)
 
-  io.active := state != s_idle
-  io.ctrl_out.start := state === s_start
-  io.ctrl_out.stop := state === s_stop
-  io.ctrl_out.write := state === s_write
-  io.ctrl_out.read := state === s_read
+  io.user.active := state != s_idle
+  io.user.stat.start := state === s_start
+  io.user.stat.stop := state === s_stop
+  io.user.stat.write := state === s_write
+  io.user.stat.read := state === s_read
 
   val data_vec = Vec.fill(8) {Reg(init=UInt(0,width=1))}
-  io.data_out := data_vec.reduceRight[UInt](Cat(_,_))
+  io.user.data_out := data_vec.reduceRight[UInt](Cat(_,_))
 
   val ack_reg = Reg(init = Bool(false))
-  io.ack := ack_reg
+  io.user.ack := ack_reg
   
   // True when in the middle of a clock high period
   val sample = Bool()
@@ -105,11 +115,12 @@ class I2CMaster extends Module {
       scl_reg := Bool(true)
       ack_reg := Bool(false)
 
-      unless (io.clock_div_in === UInt(0)) {
-        clock_div := io.clock_div_in
+      // Don't allow clock divider of zero
+      unless (io.user.clock_div_in === UInt(0)) {
+        clock_div := io.user.clock_div_in
       }
 
-      when (io.ctrl_in.start) {
+      when (io.user.ctrl.start) {
         state := s_start
         bit_max := UInt(2)
         sda_reg := Bool(true)
@@ -134,29 +145,29 @@ class I2CMaster extends Module {
     is (s_wait) {
       reset_counters := Bool(true)
 
-      when (io.ctrl_in.start) {
+      when (io.user.ctrl.start) {
         state := s_start
         bit_max := UInt(2)
         sda_reg := Bool(true)
         scl_reg := Bool(true)
       }
-      .elsewhen (io.ctrl_in.write) {
+      .elsewhen (io.user.ctrl.write) {
         state := s_write
         bit_max := UInt(18)
         // Latch in data, MSB is sent first
         for (i <- 0 until 8) {
-          data_vec(i) := io.data_in(7-i)
+          data_vec(i) := io.user.data_in(7-i)
         }
-        sda_reg := io.data_in(7)
+        sda_reg := io.user.data_in(7)
         scl_reg := Bool(false)
       }
-      .elsewhen (io.ctrl_in.read) {
+      .elsewhen (io.user.ctrl.read) {
         state := s_read
         bit_max := UInt(18)
         sda_reg := Bool(true)
         scl_reg := Bool(false)
       }
-      .elsewhen (io.ctrl_in.stop) {
+      .elsewhen (io.user.ctrl.stop) {
         state := s_stop
         bit_max := UInt(2)
         sda_reg := Bool(false)
@@ -172,7 +183,7 @@ class I2CMaster extends Module {
 
         when (scl_reg) {
           when (bit_pos < UInt(7)) {
-            sda_reg := data_vec(bit_pos+UInt(1))
+            sda_reg := data_vec(bit_pos + UInt(1))
           } .otherwise {
             sda_reg := Bool(true)
           }
@@ -219,35 +230,48 @@ class I2CMaster extends Module {
 }
 
 class I2CMasterTests(c: I2CMaster) extends Tester(c) {
-  poke(c.io.clock_div_in, 1)
+  // Set divider to fastest clock
+  poke(c.io.user.clock_div_in, 1)
   step(1)
-  poke(c.io.ctrl_in.start, 1)
+
+  // Start condition
+  poke(c.io.user.ctrl.start, 1)
   step(1)
-  poke(c.io.ctrl_in.start, 0)
+  poke(c.io.user.ctrl.start, 0)
   for (i <- 0 until 4) {
     step(256)
   }
-  
-  poke(c.io.ctrl_in.write,1)
-  poke(c.io.data_in, 0x42)
+  expect(c.io.bus.scl.out, 0)
+  expect(c.io.bus.sda.out, 0)
+
+  // Write 0x42, expect ACK since SDA in stays low
+  poke(c.io.user.ctrl.write,1)
+  poke(c.io.user.data_in, 0x42)
   step(1)
-  poke(c.io.ctrl_in.write,0)
+  poke(c.io.user.ctrl.write,0)
   for(i <- 0 until 20) {
     step(256)
   }
+  expect(c.io.user.ack, 1)
 
-  poke(c.io.ctrl_in.read,1)
-  poke(c.io.sda_in,1)
+  // Read, expect 0xFF and NACK after setting sda to 1
+  poke(c.io.user.ctrl.read,1)
+  poke(c.io.bus.sda.in,1)
   step(1)
-  poke(c.io.ctrl_in.read,0)
+  poke(c.io.user.ctrl.read,0)
   for(i <- 0 until 20) {
     step(256)
   }
+  expect(c.io.user.data_out, 0xFF)
+  expect(c.io.user.ack, 0)
 
-  poke(c.io.ctrl_in.stop,1)
+  // Stop condition, expect bus to be idle
+  poke(c.io.user.ctrl.stop,1)
   step(1)
-  poke(c.io.ctrl_in.stop,0)
+  poke(c.io.user.ctrl.stop,0)
   for(i <- 0 until 4) {
     step(256)
   }
+  expect(c.io.bus.scl.out, 1)
+  expect(c.io.bus.sda.out, 1)
 }
