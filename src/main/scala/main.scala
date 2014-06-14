@@ -10,6 +10,9 @@ object I2C {
       case "I2CMaster" => 
         chiselMainTest(tutArgs, () => Module(new I2CMaster())){
           c => new I2CMasterTests(c)}
+      case "I2CStream" => 
+        chiselMainTest(tutArgs, () => Module(new I2CStream())){
+          c => new I2CStreamTests(c)}
     }
   }
 }
