@@ -3,17 +3,18 @@ package I2C
 import Chisel._
 
 class I2CMasterCtrlIO extends Bundle{
-  val active = Bool(INPUT)
   val start = Bool(INPUT)
   val stop = Bool(INPUT)
   val write = Bool(INPUT)
   val read = Bool(INPUT)
-  val ack = Bool(INPUT)
 }
 
 class I2CMasterIO extends Bundle{
   val ctrl_in = new I2CMasterCtrlIO()  
   val ctrl_out = new I2CMasterCtrlIO().flip
+  
+  val active = Bool(OUTPUT)
+  val ack = Bool(OUTPUT)
   
   val clock_div_in = UInt(INPUT, width=8)
   val clock_div_out = UInt(OUTPUT, width=8)
@@ -72,7 +73,7 @@ class I2CMaster extends Module {
   val s_idle :: s_start :: s_wait :: s_read :: s_write :: s_stop :: Nil = Enum(UInt(),6)
   val state = Reg(init = s_idle)
 
-  io.ctrl_out.active := state != s_idle
+  io.active := state != s_idle
   io.ctrl_out.start := state === s_start
   io.ctrl_out.stop := state === s_stop
   io.ctrl_out.write := state === s_write
@@ -82,7 +83,7 @@ class I2CMaster extends Module {
   io.data_out := data_vec.reduceRight[UInt](Cat(_,_))
 
   val ack_reg = Reg(init = Bool(false))
-  io.ctrl_out.ack := ack_reg
+  io.ack := ack_reg
   
   // True when in the middle of a clock high period
   val sample = Bool()
