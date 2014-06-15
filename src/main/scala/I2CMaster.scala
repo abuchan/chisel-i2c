@@ -64,7 +64,7 @@ class I2CMaster extends Module {
   clock_counter.io.reset := reset_counters
 
   // Report MSB of clock divider
-  io.user.clock_div_out := clock_max
+  io.user.clock_div_out := clock_div
 
   // Counter for number of bit transactions in each state
   val bit_max = Reg(init=UInt(0,width=5))
@@ -179,7 +179,9 @@ class I2CMaster extends Module {
       
       // Toggle SCL and set SDA to next bit, or high when reading ACK
       when (clock_counter.io.top) {
-        scl_reg := ~scl_reg
+        when(bit_pos <= UInt(8)) {
+          scl_reg := ~scl_reg
+        }
 
         when (scl_reg) {
           when (bit_pos < UInt(7)) {
@@ -197,11 +199,11 @@ class I2CMaster extends Module {
     is (s_read) {
       clock_counter.io.en := Bool(true)
 
-      when(clock_counter.io.top) {
+      when(clock_counter.io.top & (bit_pos <= UInt(8))) {
         scl_reg := ~scl_reg
       }
       
-      when (sample && (bit_pos <= UInt(7))) {
+      when (sample & (bit_pos <= UInt(7))) {
         data_vec(bit_pos) := sda_in_reg
       }
 
