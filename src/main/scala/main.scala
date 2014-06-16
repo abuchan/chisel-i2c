@@ -11,8 +11,10 @@ object I2C {
         chiselMainTest(tutArgs, () => Module(new I2CMaster())){
           c => new I2CMasterTests(c)}
       case "I2CStream" => 
-        chiselMainTest(tutArgs, () => Module(new I2CStream())){
+        chiselMainTest(tutArgs, () => Module(new I2CStream(synth=false))){
           c => new I2CStreamTests(c)}
+      case "Zedboard" =>
+        chiselMain(tutArgs, () => Module(new I2CStream()))
     }
   }
 }
