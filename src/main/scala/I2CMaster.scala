@@ -58,7 +58,7 @@ class I2CMaster extends Module {
   val clock_div = Reg(init=UInt(0xFF,width=8))
   val clock_max = UInt(width=16)
   clock_max := clock_div ## UInt(0,width=8)
-  val clock_counter = Module(new Counter(clock_max))
+  val clock_counter = Module(new ResetCounter(clock_max))
   clock_counter.io.max := clock_max
   clock_counter.io.en := Bool(false)
   clock_counter.io.reset := reset_counters
@@ -68,7 +68,7 @@ class I2CMaster extends Module {
 
   // Counter for number of bit transactions in each state
   val bit_max = Reg(init=UInt(0,width=5))
-  val bit_counter = Module(new Counter(bit_max))
+  val bit_counter = Module(new ResetCounter(bit_max))
   bit_counter.io.max := bit_max
   bit_counter.io.en := clock_counter.io.top
   bit_counter.io.reset := reset_counters

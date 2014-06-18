@@ -2,7 +2,7 @@ package I2C
 
 import Chisel._
 
-class Counter(abs_max: UInt) extends Module {
+class ResetCounter(abs_max: UInt) extends Module {
   val io = new Bundle {
     val en = Bool(INPUT)
     val reset = Bool(INPUT)
